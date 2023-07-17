@@ -1,0 +1,5 @@
+**/target
+**/.direnv
+**/.envrc
+
+/spin_core/known_contracts/*.spin
