@@ -1,0 +1,14 @@
+[package]
+name = "spin_sdk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+spin_sdk_macros = { path = "../macros" }
+borsh = "0.10.3"
+serde = { version = "1.0.171", features = ["derive"] }
+risc0-zkvm = { version = "0.16.1", default-features = false, features = ["std"] }
+spin_primitives = { path = "../../spin_core/primitives" }
+once_cell = "1.18.0"

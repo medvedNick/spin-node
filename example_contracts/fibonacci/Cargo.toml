@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 risc0-zkvm = { version = "0.16.1", default-features = false, features = [ "std" ] }
-spin_sdk = { path = "../../spin_sdk" }
+spin_sdk = { path = "../../spin_sdk/sdk" }
 borsh = "0.10.3"
