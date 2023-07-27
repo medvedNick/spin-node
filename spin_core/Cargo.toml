@@ -1,10 +1,7 @@
-[workspace.package]
-name = "spin_blockchain"
-version = "0.0.0"
-edition = "2021"
-
 [workspace]
 members = [
     "primitives",
     "runtime",
+    "meta_contracts",
+    "playgrounds",
 ]

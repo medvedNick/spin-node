@@ -2,4 +2,4 @@
 **/.direnv
 **/.envrc
 
-/spin_core/known_contracts/*.spin
+/spin_core/state

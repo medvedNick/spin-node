@@ -1,0 +1,24 @@
+[package]
+name = "playgrounds"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "erc20"
+
+[[bin]]
+name = "example_token"
+
+[dependencies]
+spin_runtime = { path = "../runtime" }
+spin_primitives = { path = "../primitives" }
+borsh = "0.10.3"
+tracing = "0.1.36"
+tracing-core = "0.1.29"
+tracing-log = "0.1.3"
+tracing-serde = "0.1.3"
+tracing-subscriber = { version = "0.3.15", features = ["env-filter"] }
+
+eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
+hex = "0.4.3"
+ethabi = "18.0.0"

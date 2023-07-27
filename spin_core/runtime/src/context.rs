@@ -1,7 +1,10 @@
 use anyhow::Result;
 use risc0_zkvm::Session;
 
-use std::sync::{Arc, RwLock};
+use std::{
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 use spin_primitives::{AccountId, CallEnv, ContractCall, FunctionCall};
 
@@ -40,16 +43,15 @@ impl ExecutionContext {
     pub fn cross_contract_call(
         &mut self,
         call: ContractCall,
-        attached_gas: u64,
     ) -> Result<Arc<RwLock<ExecutionContext>>> {
-        if self.available_gas() < attached_gas {
+        if self.available_gas() < call.attached_gas {
             return Err(anyhow::anyhow!("Not enough gas"));
         }
         let context = Arc::new(RwLock::new(ExecutionContext {
             signer: self.signer().clone(),
             caller: self.contract().clone(),
             contract: call.account.clone(),
-            attached_gas,
+            attached_gas: call.attached_gas,
             used_gas: 0,
             call: call.function_call,
             cross_contract_calls: Vec::new(),
@@ -86,7 +88,15 @@ impl ExecutionContext {
     }
 
     pub fn available_gas(&self) -> u64 {
-        self.attached_gas - self.used_gas
+        let cc_gas = self
+            .cross_contract_calls
+            .iter()
+            .map(|call| call.read().unwrap().used_gas())
+            .sum::<u64>();
+
+        self.attached_gas
+            .saturating_sub(self.used_gas)
+            .saturating_sub(cc_gas)
     }
 
     pub fn call_env(&self) -> CallEnv {
@@ -104,5 +114,36 @@ impl ExecutionContext {
 
     pub fn set_execution_session(&mut self, session: Session) {
         self.session = Some(session);
+    }
+
+    pub fn set_gas_usage(&mut self, used_gas: u64) {
+        self.used_gas = used_gas;
+    }
+
+    // TODO: remove hardcode, use custom alias system
+    pub fn get_account_evm_address(account_id: AccountId) -> eth_primitive_types::H160 {
+        let mut hardcoded_mappings = std::collections::HashMap::new();
+        hardcoded_mappings.insert(
+            AccountId::from(AccountId::new("alice.spin".to_string())),
+            eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000001")
+                .unwrap(),
+        );
+        hardcoded_mappings.insert(
+            AccountId::from(AccountId::new("bob.spin".to_string())),
+            eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000002")
+                .unwrap(),
+        );
+        hardcoded_mappings.insert(
+            AccountId::from(AccountId::new("charlie.spin".to_string())),
+            eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000003")
+                .unwrap(),
+        );
+        hardcoded_mappings.insert(
+            AccountId::from(AccountId::new("eve.spin".to_string())),
+            eth_primitive_types::H160::from_str("0x0FF1CE0000000000000000000000000000000004")
+                .unwrap(),
+        );
+
+        hardcoded_mappings.get(&account_id).unwrap().clone()
     }
 }

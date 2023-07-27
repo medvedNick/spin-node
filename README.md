@@ -1,11 +1,31 @@
-# Spin Blockchain MVP
+# Spin ZKP Blockchain Node MVP
 
-Simple prototype of cross contract calls in risc0
+Spin ZKP Blockchain Node is our blockchain prototype, which utilizes zero-knowledge proofs (via [risc0](https://github.com/risc0/risc0)) for all state transitions.
 
+## Structure
+
+- `spin_core` - the core of the node, currently contains prototype of the runtime.
+- `spin_sdk` - SDK for writing contracts.
+- `example_contracts` - example contracts written using the SDK.
+
+## Playgrounds
+
+### Run
+
+Build example contracts and copy them to the state directory.
 ```sh
-cargo +nightly-2023-03-06 -C example_contracts build --release
-cp example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/demo_ccc_contract spin_core/known_contracts/demo_ccc.spin
-cp example_contracts/target/riscv-guest/riscv32im-risc0-zkvm-elf/release/fibonacci_contract spin_core/known_contracts/fibonacci.spin
+cd example_contracts
+cargo +nightly-2023-03-06 build --release
+cp target/riscv-guest/riscv32im-risc0-zkvm-elf/release/token_contract ../spin_core/state/contracts/token.spin
+cp target/riscv-guest/riscv32im-risc0-zkvm-elf/release/demo_ccc_contract ../spin_core/state/contracts/demo_ccc.spin
+cd ..
+```
 
-cargo +nightly-2023-03-06 -C spin_core run --release
+Run the playground.
+```sh
+cd spin_core
+
+cargo +nightly-2023-03-06 run --release --bin erc20
+# or
+cargo +nightly-2023-03-06 run --release --bin example_token
 ```

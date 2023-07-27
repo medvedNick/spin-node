@@ -12,3 +12,4 @@ serde = { version = "1.0.171", features = ["derive"] }
 risc0-zkvm = { version = "0.16.1", default-features = false, features = ["std"] }
 spin_primitives = { path = "../../spin_core/primitives" }
 once_cell = "1.18.0"
+eth-primitive-types = { package = "primitive-types", version = "0.12.1" }

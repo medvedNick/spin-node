@@ -28,7 +28,7 @@ impl Contract {
         let _: () = env::cross_contract_call(
             token_account,
             "transfer".to_string(),
-            100_000_000,
+            1_000_000,
             (recipient, amount),
         );
     }
