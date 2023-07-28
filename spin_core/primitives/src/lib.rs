@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use borsh::{BorshDeserialize, BorshSerialize};
 use serde::{Deserialize, Serialize};
 
@@ -6,19 +8,32 @@ pub mod syscalls;
 #[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
 pub struct ContractCall {
     pub account: AccountId,
-    pub function_call: FunctionCall,
+    pub method: String,
+    pub args: Vec<u8>,
     pub attached_gas: u64,
+    pub sender: AccountId,
+    pub signer: AccountId,
 }
 
 impl ContractCall {
-    pub fn new<T>(account: AccountId, method: String, args: T, attached_gas: u64) -> Self
+    pub fn new<T: BorshSerialize>(
+        account: AccountId,
+        method: String,
+        args: T,
+        attached_gas: u64,
+        sender: AccountId,
+        signer: AccountId,
+    ) -> Self
     where
         T: BorshSerialize,
     {
         Self {
             account,
-            function_call: FunctionCall::new(method, args),
+            method,
+            args: BorshSerialize::try_to_vec(&args).expect("Expected to serialize"),
             attached_gas,
+            sender,
+            signer,
         }
     }
 
@@ -28,6 +43,13 @@ impl ContractCall {
 
     pub fn into_bytes(&self) -> Vec<u8> {
         borsh::BorshSerialize::try_to_vec(&self).expect("Expected to serialize")
+    }
+
+    pub fn function_call(&self) -> FunctionCall {
+        FunctionCall {
+            method: self.method.clone(),
+            args: self.args.clone(),
+        }
     }
 }
 
@@ -38,26 +60,8 @@ pub struct FunctionCall {
 }
 
 impl FunctionCall {
-    pub fn new<T>(method: String, args: T) -> Self
-    where
-        T: BorshSerialize,
-    {
-        Self {
-            method,
-            args: args.try_to_vec().expect("Expected to serialize"),
-        }
-    }
-
-    pub fn try_from_bytes(bytes: Vec<u8>) -> std::io::Result<Self> {
-        borsh::BorshDeserialize::deserialize(&mut bytes.as_slice())
-    }
-
     pub fn try_deserialize_args<T: BorshDeserialize>(&self) -> std::io::Result<T> {
         borsh::BorshDeserialize::deserialize(&mut self.args.as_slice())
-    }
-
-    pub fn into_bytes(&self) -> Vec<u8> {
-        borsh::BorshSerialize::try_to_vec(&self).expect("Expected to serialize")
     }
 }
 
@@ -95,29 +99,21 @@ impl From<eth_primitive_types::H160> for AccountId {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
-pub struct CallEnv {
-    pub signer: AccountId,
-    pub caller: AccountId,
-    pub contract: AccountId,
-    pub attached_gas: u64,
-}
+pub type Digest = [u8; 32];
 
-impl CallEnv {
-    pub fn into_bytes(&self) -> Vec<u8> {
-        borsh::BorshSerialize::try_to_vec(&self).expect("Expected to serialize")
-    }
-}
+pub type StorageKey = String;
 
+/// Execution outcome of a contract call.
 #[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
-pub struct ExecutionCommittment {
+pub struct ExecutionOutcome {
+    pub call_hash: Digest,
     pub output: Vec<u8>,
-    pub cross_calls_hashes: Vec<[u8; 32]>,
-    pub initial_state_hash: Option<[u8; 32]>,
-    pub final_state_hash: Option<[u8; 32]>,
+    pub storage_reads: HashMap<StorageKey, Digest>,
+    pub storage_writes: HashMap<StorageKey, Digest>,
+    pub cross_calls_hashes: Vec<(Digest, Digest)>, // hashes of call and output of cross calls
 }
 
-impl ExecutionCommittment {
+impl ExecutionOutcome {
     pub fn try_from_bytes(bytes: Vec<u8>) -> std::io::Result<Self> {
         borsh::BorshDeserialize::deserialize(&mut bytes.as_slice())
     }
@@ -128,29 +124,5 @@ impl ExecutionCommittment {
 
     pub fn try_deserialize_output<T: BorshDeserialize>(&self) -> std::io::Result<T> {
         borsh::BorshDeserialize::deserialize(&mut self.output.as_slice())
-    }
-}
-
-pub struct Transaction {
-    pub signer: AccountId,
-    pub call: ContractCall,
-}
-
-impl Transaction {
-    pub fn new_evm_call(
-        signer: AccountId,
-        address: eth_primitive_types::H160,
-        data: Vec<u8>,
-        attached_gas: u64,
-    ) -> Self {
-        Self {
-            signer,
-            call: ContractCall::new(
-                address.into(),
-                String::from("contract_call"), // TODO: use const
-                data,
-                attached_gas,
-            ),
-        }
     }
 }

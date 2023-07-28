@@ -90,24 +90,22 @@ impl<'vicinity> Backend for EvmMemoryBackend<'vicinity> {
     }
 
     fn exists(&self, address: H160) -> bool {
-        let basic: Option<EvmBasic> = env::get_state(format!("basic_{:?}", address));
+        let basic = env::get_storage::<EvmBasic>(format!("basic_{:?}", address));
         basic.is_some()
     }
 
     fn basic(&self, address: H160) -> Basic {
-        let basic = env::get_state::<EvmBasic>(format!("basic_{:?}", address));
-
+        let basic = env::get_storage::<EvmBasic>(format!("basic_{:?}", address));
         basic.unwrap_or_default().into()
     }
 
     fn code(&self, address: H160) -> Vec<u8> {
-        let code: Vec<u8> = env::get_state(format!("code_{:?}", address)).unwrap_or_default();
+        let code: Vec<u8> = env::get_storage(format!("code_{:?}", address)).unwrap_or_default();
         code
     }
 
-    // TODO: cache storage
     fn storage(&self, address: H160, index: H256) -> H256 {
-        let bytes: Vec<u8> = env::get_state(format!("storage_{:?}", address)).unwrap();
+        let bytes: Vec<u8> = env::get_storage(format!("storage_{:?}", address)).unwrap();
         let storage: BTreeMap<H256, H256> = bincode::deserialize(&bytes).unwrap();
 
         storage.get(&index).cloned().unwrap_or_default()
@@ -135,22 +133,22 @@ impl<'vicinity> ApplyBackend for EvmMemoryBackend<'vicinity> {
                     reset_storage,
                 } => {
                     let is_empty = {
-                        env::set_state(format!("basic_{:?}", address), EvmBasic::from(basic));
+                        env::set_storage(format!("basic_{:?}", address), EvmBasic::from(basic));
 
                         if let Some(code) = code {
-                            env::set_state(format!("code_{:?}", address), code);
+                            env::set_storage(format!("code_{:?}", address), code);
                         }
 
                         if reset_storage {
                             let empty_state = BTreeMap::<H256, H256>::new();
-                            env::set_state(
+                            env::set_storage(
                                 format!("storage_{:?}", address),
                                 bincode::serialize(&empty_state).unwrap(),
                             );
                         }
 
                         let mut storage: BTreeMap<H256, H256> =
-                            env::get_state::<Vec<u8>>(format!("storage_{:?}", address))
+                            env::get_storage::<Vec<u8>>(format!("storage_{:?}", address))
                                 .map(|bytes| bincode::deserialize(&bytes).unwrap())
                                 .unwrap_or_default();
 
@@ -172,7 +170,7 @@ impl<'vicinity> ApplyBackend for EvmMemoryBackend<'vicinity> {
                             }
                         }
 
-                        env::set_state(
+                        env::set_storage(
                             format!("storage_{:?}", address),
                             bincode::serialize(&storage).unwrap(),
                         );

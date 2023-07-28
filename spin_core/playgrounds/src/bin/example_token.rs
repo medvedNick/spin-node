@@ -1,6 +1,6 @@
 use tracing::info;
 
-use spin_primitives::{AccountId, ExecutionCommittment};
+use spin_primitives::{AccountId, ExecutionOutcome};
 use spin_runtime::context::ExecutionContext;
 use spin_runtime::executor;
 
@@ -41,11 +41,14 @@ fn token_init(token: &AccountId, signer: &AccountId, ticker: String, initial_sup
         "Creating token"
     );
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        signer.clone(),
-        signer.clone(),
-        token.clone(),
-        100_000_000,
-        spin_primitives::FunctionCall::new("init".into(), (ticker, initial_supply)),
+        spin_primitives::ContractCall::new(
+            token.clone(),
+            "init".into(),
+            (ticker, initial_supply),
+            100_000_000,
+            signer.clone(),
+            signer.clone(),
+        ),
     )));
 
     executor::execute(ctx).unwrap();
@@ -54,11 +57,14 @@ fn token_init(token: &AccountId, signer: &AccountId, ticker: String, initial_sup
 fn transfer(token: &AccountId, from: &AccountId, to: &AccountId, amount: u128) {
     info!(amount, ?to, ?from, "Transfering");
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        AccountId::new(from.to_string()),
-        AccountId::new(from.to_string()),
-        AccountId::new(token.to_string()),
-        100_000_000,
-        spin_primitives::FunctionCall::new("transfer".into(), (to, amount)),
+        spin_primitives::ContractCall::new(
+            token.clone(),
+            "transfer".into(),
+            (to, amount),
+            100_000_000,
+            from.clone(),
+            from.clone(),
+        ),
     )));
 
     executor::execute(ctx).unwrap();
@@ -66,16 +72,19 @@ fn transfer(token: &AccountId, from: &AccountId, to: &AccountId, amount: u128) {
 
 fn token_balance_of(token: &AccountId, account: &AccountId) -> u64 {
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        account.clone(),
-        account.clone(),
-        token.clone(),
-        100_000_000,
-        spin_primitives::FunctionCall::new("balance_of".into(), account),
+        spin_primitives::ContractCall::new(
+            token.clone(),
+            "balance_of".into(),
+            account,
+            100_000_000,
+            account.clone(),
+            account.clone(),
+        ),
     )));
 
     let s = executor::execute(ctx.clone()).unwrap();
 
-    let committment: ExecutionCommittment =
+    let committment: ExecutionOutcome =
         borsh::BorshDeserialize::deserialize(&mut s.journal.as_slice()).unwrap();
 
     let balance: u64 = committment.try_deserialize_output().unwrap();

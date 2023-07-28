@@ -24,12 +24,14 @@ impl Contract {
 
             let storage = BTreeMap::<H256, H256>::new();
 
-            env::set_state(format!("basic_{:?}", address), basic);
-            env::set_state(
+            env::set_storage(format!("basic_{:?}", address), basic);
+            env::set_storage(
                 format!("storage_{:?}", address),
                 bincode::serialize(&storage).unwrap(),
             );
         }
+
+        env::commit(())
     }
 
     pub fn deploy_contract(code: Vec<u8>) {

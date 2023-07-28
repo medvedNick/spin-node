@@ -41,37 +41,35 @@ impl Syscall for GetStorageCallHandler {
         let key = String::from_utf8(from_guest).unwrap();
 
         // TODO: don't use files as contract state storage xD
-        let state: Vec<u8> = std::fs::read(format!(
+        let storage: Option<Vec<u8>> = std::fs::read(format!(
             "./state/storage/{}.{}",
             key,
-            context.contract().to_string()
+            context.call().account.to_string()
         ))
+        .map(Some)
         .unwrap_or_else(|e| match e.kind() {
             std::io::ErrorKind::NotFound => {
                 debug!(
-                    "No state found for key {:?} in {:?}, creating new",
+                    "No storage found for key {:?} in {:?}",
                     key,
-                    context.contract()
+                    context.call().account
                 );
-                Vec::new()
+                None
             }
             _ => todo!(),
         });
 
-        // tracing::warn!("state: {:?}", state);
+        // let hash = {
+        //     let algorithm = &mut Sha256::default();
+        //     algorithm.update(&storage);
+        //     algorithm.finalize_reset().as_slice().to_vec()
+        // }
 
-        let algorithm = &mut Sha256::default();
-        algorithm.update(&state);
-        let hash = algorithm.finalize_reset();
-
-        let response = GetStorageResponse {
-            hash: hash.into(),
-            state,
-        };
+        let response = GetStorageResponse { storage };
 
         let response_bytes = BorshSerialize::try_to_vec(&response).unwrap();
 
-        debug!(contract=?context.contract(), key=?key, hash = bytes_to_hex_string(hash.as_slice()), "Loading storage");
+        debug!(contract=?context.call().account, key=?key, "Loading storage");
 
         let output = to_vec(&response_bytes).unwrap();
         to_guest[0..output.len()].copy_from_slice(&output);
@@ -110,20 +108,20 @@ impl risc0_zkvm::Syscall for SetStorageCallHandler {
             BorshDeserialize::deserialize(&mut from_guest.as_slice()).unwrap();
 
         let algorithm = &mut Sha256::default();
-        algorithm.update(request.state.clone());
+        algorithm.update(request.storage.clone());
         let hash2 = algorithm.finalize_reset();
         assert_eq!(request.hash, hash2.as_slice());
 
-        debug!(contract=?context.contract(), key=?request.key, new_hash = bytes_to_hex_string(hash2.as_slice()), "Updating storage");
+        debug!(contract=?context.call().account, key=?request.key, new_hash = bytes_to_hex_string(hash2.as_slice()), "Updating storage");
 
         // TODO: don't use files as contract state storage xD
         std::fs::write(
             format!(
                 "./state/storage/{}.{}",
                 request.key,
-                context.contract().to_string()
+                context.call().account.to_string()
             ),
-            request.state,
+            request.storage,
         )
         .unwrap();
 

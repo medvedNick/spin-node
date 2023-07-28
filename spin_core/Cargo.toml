@@ -5,3 +5,7 @@ members = [
     "meta_contracts",
     "playgrounds",
 ]
+
+[workspace.dependencies]
+anyhow = "1"
+borsh = { git = "ssh://github.com/near/borsh-rs", branch = "master", features = ["derive"] }

@@ -13,11 +13,12 @@ macro_rules! entrypoint {
         mod zkvm_generated_main {
             #[no_mangle]
             fn main() {
-                let call = spin_sdk::spin_primitives::FunctionCall::try_from_bytes(
+                let contract_call = spin_sdk::spin_primitives::ContractCall::try_from_bytes(
                     risc0_zkvm::guest::env::read(),
                 )
-                .expect("Expected to deserialize");
-                super::ZKVM_ENTRY(call)
+                .expect("Corrupted ContractCall");
+                spin_sdk::env::setup_env(&contract_call);
+                super::ZKVM_ENTRY(contract_call.function_call())
             }
         }
     };

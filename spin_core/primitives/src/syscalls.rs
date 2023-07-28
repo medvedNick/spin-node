@@ -1,10 +1,6 @@
 use borsh::{BorshDeserialize, BorshSerialize};
 
-pub const GET_ENV_CALL: risc0_zkvm_platform::syscall::SyscallName = unsafe {
-    risc0_zkvm_platform::syscall::SyscallName::from_bytes_with_nul(
-        concat!("spinvm", "::", "GET_ENV", "\0").as_ptr(),
-    )
-};
+use crate::{Digest, StorageKey};
 
 pub const CROSS_CONTRACT_CALL: risc0_zkvm_platform::syscall::SyscallName = unsafe {
     risc0_zkvm_platform::syscall::SyscallName::from_bytes_with_nul(
@@ -25,16 +21,20 @@ pub const SET_STORAGE_CALL: risc0_zkvm_platform::syscall::SyscallName = unsafe {
 };
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
-pub struct SetStorageRequest {
-    pub key: String,
-    pub hash: [u8; 32],
-    pub state: Vec<u8>,
+pub struct GetStorageRequest {
+    pub key: StorageKey,
 }
 
 #[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct GetStorageResponse {
-    pub hash: [u8; 32],
-    pub state: Vec<u8>,
+    pub storage: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
+pub struct SetStorageRequest {
+    pub key: StorageKey,
+    pub hash: Digest,
+    pub storage: Vec<u8>,
 }
 
 pub const GET_ACCOUNT_MAPPING: risc0_zkvm_platform::syscall::SyscallName = unsafe {

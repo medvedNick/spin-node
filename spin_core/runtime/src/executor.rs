@@ -3,16 +3,13 @@ use std::sync::{Arc, RwLock};
 use anyhow::{Context, Result};
 use risc0_zkvm::{serde::to_vec, Executor, ExecutorEnv};
 use spin_primitives::{
-    syscalls::{
-        CROSS_CONTRACT_CALL, GET_ACCOUNT_MAPPING, GET_ENV_CALL, GET_STORAGE_CALL, SET_STORAGE_CALL,
-    },
+    syscalls::{CROSS_CONTRACT_CALL, GET_ACCOUNT_MAPPING, GET_STORAGE_CALL, SET_STORAGE_CALL},
     AccountId,
 };
 use tracing::debug;
 
 use crate::syscalls::{
     accounts_mapping::AccountsMappingHandler, cross_contract::CrossContractCallHandler,
-    env::GetEnvCallHandler,
 };
 use crate::{
     context::ExecutionContext,
@@ -44,7 +41,7 @@ impl std::io::Write for ContractLogger {
         // TODO: handle non-utf8 logs
         let msg = String::from_utf8(buf.to_vec()).unwrap();
 
-        tracing::debug!(contract = ?context.contract(),msg, "📜 Contract log");
+        tracing::debug!(contract = ?context.call().account, msg, "📜 Contract log");
 
         Ok(buf.len())
     }
@@ -57,12 +54,11 @@ impl std::io::Write for ContractLogger {
 pub fn execute(context: Arc<RwLock<ExecutionContext>>) -> Result<risc0_zkvm::Session> {
     let mut exec = {
         let ctx = context.read().unwrap();
-        debug!(contract = ?ctx.contract(), "Executing contract");
+        debug!(contract = ?ctx.call().account, "Executing contract");
 
         let env = ExecutorEnv::builder()
             .add_input(&to_vec(&ctx.call().into_bytes())?)
-            .session_limit(Some(ctx.attached_gas().try_into().unwrap()))
-            .syscall(GET_ENV_CALL, GetEnvCallHandler::new(context.clone()))
+            .session_limit(Some(ctx.call().attached_gas.try_into().unwrap()))
             .syscall(
                 CROSS_CONTRACT_CALL,
                 CrossContractCallHandler::new(context.clone()),
@@ -82,11 +78,11 @@ pub fn execute(context: Arc<RwLock<ExecutionContext>>) -> Result<risc0_zkvm::Ses
             .stdout(ContractLogger::new(context.clone()))
             .build()?;
 
-        let elf = if ctx.contract() == &AccountId::new(String::from("evm")) {
+        let elf = if ctx.call().account == AccountId::new(String::from("evm")) {
             meta_contracts::EVM_METACONTRACT_ELF.to_vec()
         } else {
-            load_contract(ctx.contract().clone())
-                .context(format!("Load contract {:?}", ctx.contract()))?
+            load_contract(ctx.call().account.clone())
+                .context(format!("Load contract {:?}", ctx.call().account))?
         };
 
         let program = risc0_zkvm::Program::load_elf(&elf, MAX_MEMORY)?;

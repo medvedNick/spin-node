@@ -29,7 +29,7 @@ impl Syscall for AccountsMappingHandler {
         let _enter = span.enter();
 
         let ctx = self.context.write().unwrap();
-        debug!(from_contract=?ctx.contract());
+        debug!(from_contract=?ctx.call().account);
 
         let buf_ptr = syscall_ctx.load_register(risc0_zkvm_platform::syscall::reg_abi::REG_A3);
         let buf_len = syscall_ctx.load_register(risc0_zkvm_platform::syscall::reg_abi::REG_A4);

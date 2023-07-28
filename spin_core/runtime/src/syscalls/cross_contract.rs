@@ -26,7 +26,7 @@ impl Syscall for CrossContractCallHandler {
         to_guest: &mut [u32],
     ) -> Result<(u32, u32)> {
         let mut origin_ctx = self.context.write().unwrap();
-        debug!(from_contract=?origin_ctx.contract(), "handling syscall for cross contract call");
+        debug!(from_contract=?origin_ctx.call().account, "handling syscall for cross contract call");
         origin_ctx.set_gas_usage(syscall_ctx.get_cycle().try_into().unwrap());
 
         let buf_ptr = syscall_ctx.load_register(risc0_zkvm_platform::syscall::reg_abi::REG_A3);

@@ -1,174 +1,295 @@
-use borsh::BorshDeserialize;
+use borsh::{BorshDeserialize, BorshSerialize};
 use once_cell::sync::Lazy;
-use risc0_zkvm::{
-    serde::from_slice,
-    sha::rust_crypto::{Digest, Sha256},
-};
-use std::sync::Mutex;
+use risc0_zkvm::sha::rust_crypto::{Digest, Sha256};
+use std::{collections::HashMap, sync::Mutex};
 
 use spin_primitives::{
     syscalls::{
         GetStorageResponse, SetStorageRequest, CROSS_CONTRACT_CALL, GET_ACCOUNT_MAPPING,
-        GET_ENV_CALL, GET_STORAGE_CALL, SET_STORAGE_CALL,
+        GET_STORAGE_CALL, SET_STORAGE_CALL,
     },
-    AccountId, CallEnv, ContractCall, ExecutionCommittment,
+    AccountId, ContractCall, Digest as HashDigest, ExecutionOutcome, StorageKey,
 };
 
-static CALL_ENV: Lazy<Mutex<CallEnv>> = Lazy::new(|| Mutex::new(load_env_syscall()));
+pub fn setup_env(call: &ContractCall) {
+    let mut env = ENV.lock().unwrap();
+    *env = Some(Env::new_from_call(call));
+}
 
-// TODO: I broke this when I added support for multi-key storage, will fix later
-// static INITIAL_STATE_HASH: Lazy<Mutex<Option<[u8; 32]>>> = Lazy::new(|| Mutex::new(None));
-// static FINAL_STATE: Lazy<Mutex<Option<Vec<u8>>>> = Lazy::new(|| Mutex::new(None));
+#[derive(Debug, BorshSerialize)]
+struct Env {
+    signer: AccountId,
+    caller: AccountId,
+    contract: AccountId,
+    attached_gas: u64,
 
-static CROSS_CALLS_HASHES: Lazy<Mutex<Vec<[u8; 32]>>> = Lazy::new(|| Mutex::new(Vec::new()));
+    call_hash: HashDigest,
+    initial_storage_hashes: HashMap<StorageKey, HashDigest>,
+    storage_cache: HashMap<StorageKey, (Vec<u8>, bool)>,
+    cross_calls_hashes: Vec<(HashDigest, HashDigest)>,
+}
 
-/// Loads the call environment from the host.
-pub fn load_env_syscall() -> CallEnv {
-    let mut response = [0u32; 512]; // TODO: make this dynamic
-    risc0_zkvm::guest::env::syscall(GET_ENV_CALL, &[], &mut response);
+impl Env {
+    fn new_from_call(call: &ContractCall) -> Self {
+        let call_hash = {
+            let call_bytes = BorshSerialize::try_to_vec(&call).expect("Expected to serialize");
+            let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
+            algorithm.update(&call_bytes);
+            algorithm.finalize_reset().as_slice().try_into().unwrap()
+        };
 
-    let response: Vec<u8> = from_slice(&response).expect("Expected to deserialize");
+        Self {
+            signer: call.signer.clone(),
+            caller: call.sender.clone(),
+            contract: call.account.clone(),
+            attached_gas: call.attached_gas,
+            call_hash: call_hash,
+            initial_storage_hashes: Default::default(),
+            storage_cache: Default::default(),
+            cross_calls_hashes: Default::default(),
+        }
+    }
+}
 
-    BorshDeserialize::deserialize(&mut response.as_slice()).expect("Expected to deserialize")
+static ENV: Lazy<Mutex<Option<Env>>> = Lazy::new(|| Mutex::new(None));
+
+impl Env {
+    /// Returns the current call signer
+    pub fn signer(&self) -> AccountId {
+        self.signer.clone()
+    }
+
+    /// Returns the current call sender
+    pub fn caller(&self) -> AccountId {
+        self.caller.clone()
+    }
+
+    /// Returns the current call contract
+    pub fn contract(&self) -> AccountId {
+        self.contract.clone()
+    }
+
+    /// Makes a cross-contract call
+    pub fn cross_contract_call<T: borsh::BorshSerialize>(
+        &mut self,
+        account: AccountId,
+        method: String,
+        attached_gas: u64,
+        args: T,
+    ) -> ExecutionOutcome {
+        let call = ContractCall::new(
+            account,
+            method,
+            args,
+            attached_gas,
+            self.contract(),
+            self.signer(),
+        );
+        let call_hash = {
+            let call_bytes = BorshSerialize::try_to_vec(&call).expect("Expected to serialize");
+            let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
+            algorithm.update(&call_bytes);
+            algorithm.finalize_reset().as_slice().try_into().unwrap()
+        };
+
+        let mut response = [0u32; 32]; // TODO: make this dynamic
+
+        risc0_zkvm::guest::env::syscall(
+            CROSS_CONTRACT_CALL,
+            call.into_bytes().as_slice(),
+            &mut response,
+        );
+
+        let response: Vec<u8> =
+            risc0_zkvm::serde::from_slice(&response).expect("Expected to deserialize");
+
+        let outcome =
+            ExecutionOutcome::try_from_bytes(response).expect("ExecutionOutcome is corrupted");
+
+        assert_eq!(call_hash, outcome.call_hash);
+
+        let output_hash = {
+            let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
+            algorithm.update(&outcome.output);
+            algorithm.finalize_reset().as_slice().try_into().unwrap()
+        };
+
+        self.cross_calls_hashes.push((call_hash, output_hash));
+
+        outcome
+    }
+
+    /// Returns the storage value for the given key, return None if storage is not exist
+    pub fn get_storage<T: BorshDeserialize>(&mut self, key: StorageKey) -> Option<T> {
+        if let Some(storage_bytes) = self.storage_cache.get(&key) {
+            return Some(
+                BorshDeserialize::try_from_slice(storage_bytes.0.as_slice())
+                    .expect("Expected to deserialize"),
+            );
+        }
+
+        let mut response = [0u32; 65536]; // TODO: make this dynamic
+
+        risc0_zkvm::guest::env::syscall(GET_STORAGE_CALL, &key.clone().into_bytes(), &mut response);
+
+        let response: Vec<u8> =
+            risc0_zkvm::serde::from_slice(&response).expect("Expected to deserialize");
+
+        let response: GetStorageResponse =
+            BorshDeserialize::try_from_slice(&mut response.as_slice())
+                .expect("GetStorageResponse is corrupted");
+
+        let Some(storage) = response.storage else {
+        return None;
+    };
+
+        let hash = {
+            let algorithm = &mut Sha256::default();
+            algorithm.update(storage.clone());
+            algorithm.finalize_reset().as_slice().try_into().unwrap()
+        };
+
+        self.storage_cache
+            .insert(key.clone(), (storage.clone(), false));
+        self.initial_storage_hashes.insert(key, hash);
+
+        Some(
+            borsh::BorshDeserialize::deserialize(&mut storage.as_slice())
+                .expect("Expected to deserialize"),
+        )
+    }
+
+    pub fn set_storage<T: borsh::BorshSerialize>(&mut self, key: String, data: T) {
+        let storage_bytes =
+            borsh::BorshSerialize::try_to_vec(&data).expect("Expected to serialize");
+
+        self.storage_cache
+            .insert(key.clone(), (storage_bytes.clone(), true));
+    }
+
+    fn send_storage_update(key: String, storage: Vec<u8>) -> HashDigest {
+        let hash = {
+            let algorithm = &mut Sha256::default();
+            algorithm.update(&storage);
+            algorithm.finalize_reset().as_slice().try_into().unwrap()
+        };
+
+        let request = SetStorageRequest {
+            key: key.clone(),
+            hash,
+            storage,
+        };
+
+        let to_host = borsh::BorshSerialize::try_to_vec(&request).expect("Expected to serialize");
+
+        risc0_zkvm::guest::env::syscall(SET_STORAGE_CALL, &to_host, &mut []);
+
+        hash
+    }
+
+    pub fn commit<T: borsh::BorshSerialize>(self, output: T) {
+        let Env {
+            signer: _,
+            caller: _,
+            contract: _,
+            attached_gas: _,
+            call_hash,
+            initial_storage_hashes,
+            storage_cache,
+            cross_calls_hashes,
+        } = self;
+
+        let output = borsh::BorshSerialize::try_to_vec(&output).expect("Expected to serialize");
+
+        let storage_writes = storage_cache
+            .into_iter()
+            .filter_map(|(key, (storage, was_changed))| {
+                if was_changed {
+                    let hash = Env::send_storage_update(key.clone(), storage.clone());
+                    Some((key.clone(), hash))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let outcome = ExecutionOutcome {
+            output,
+            call_hash: call_hash,
+            storage_reads: initial_storage_hashes,
+            storage_writes,
+            cross_calls_hashes: cross_calls_hashes,
+        };
+
+        risc0_zkvm::guest::env::commit_slice(
+            &borsh::BorshSerialize::try_to_vec(&outcome).expect("Expected to serialize"),
+        )
+    }
+
+    /// Get EVM address by AccountId
+    pub fn get_evm_address(&self, account_id: AccountId) -> eth_primitive_types::H160 {
+        let mut response = [0u32; 20];
+
+        risc0_zkvm::guest::env::syscall(
+            GET_ACCOUNT_MAPPING,
+            account_id.to_string().as_bytes(),
+            &mut response,
+        );
+
+        let response: [u8; 20] =
+            risc0_zkvm::serde::from_slice(&response).expect("Expected to deserialize");
+
+        eth_primitive_types::H160::from_slice(&response)
+    }
 }
 
 /// Returns the current call signer
 pub fn signer() -> AccountId {
-    CALL_ENV.lock().unwrap().signer.clone()
+    ENV.lock().unwrap().as_ref().unwrap().signer()
 }
 
 /// Returns the current call sender
 pub fn caller() -> AccountId {
-    CALL_ENV.lock().unwrap().caller.clone()
+    ENV.lock().unwrap().as_ref().unwrap().caller()
 }
 
 /// Returns the current call contract
 pub fn contract() -> AccountId {
-    CALL_ENV.lock().unwrap().contract.clone()
+    ENV.lock().unwrap().as_ref().unwrap().contract()
 }
 
 /// Makes a cross-contract call
-pub fn cross_contract_call<T: borsh::BorshSerialize, O: borsh::BorshDeserialize>(
+pub fn cross_contract_call<T: borsh::BorshSerialize>(
     account: AccountId,
     method: String,
     attached_gas: u64,
     args: T,
-) -> O {
-    let call = ContractCall::new(account, method, args, attached_gas);
-
-    let mut response = [0u32; 32]; // TODO: make this dynamic
-
-    risc0_zkvm::guest::env::syscall(
-        CROSS_CONTRACT_CALL,
-        call.into_bytes().as_slice(),
-        &mut response,
-    );
-
-    let response: Vec<u8> =
-        risc0_zkvm::serde::from_slice(&response).expect("Expected to deserialize");
-
-    let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
-    algorithm.update(&response);
-    let response_hash = algorithm.finalize_reset().as_slice().try_into().unwrap();
-    CROSS_CALLS_HASHES.lock().unwrap().push(response_hash);
-
-    ExecutionCommittment::try_from_bytes(response)
+) -> ExecutionOutcome {
+    ENV.lock()
         .unwrap()
-        .try_deserialize_output()
+        .as_mut()
         .unwrap()
+        .cross_contract_call(account, method, attached_gas, args)
 }
 
-pub fn get_state<T: BorshDeserialize>(key: String) -> Option<T> {
-    let mut response = [0u32; 65536];
-
-    risc0_zkvm::guest::env::syscall(GET_STORAGE_CALL, &key.into_bytes(), &mut response);
-
-    let response: Vec<u8> =
-        risc0_zkvm::serde::from_slice(&response).expect("Expected to deserialize");
-
-    let response: GetStorageResponse =
-        BorshDeserialize::try_from_slice(&mut response.as_slice()).unwrap();
-
-    // INITIAL_STATE_HASH
-    //     .lock()
-    //     .unwrap()
-    //     .replace(response.state.clone().try_into().unwrap());
-
-    let algorithm = &mut Sha256::default();
-    algorithm.update(&response.state.clone());
-    let hash2 = algorithm.finalize_reset();
-    assert!(response.hash == hash2.as_slice());
-
-    if response.state.is_empty() {
-        return None;
-    } else {
-        Some(
-            borsh::BorshDeserialize::deserialize(&mut response.state.as_slice())
-                .expect("Expected to deserialize"),
-        )
-    }
+/// Returns the storage value for the given key, return None if storage is not exist
+pub fn get_storage<T: BorshDeserialize>(key: StorageKey) -> Option<T> {
+    ENV.lock().unwrap().as_mut().unwrap().get_storage(key)
 }
 
-pub fn set_state<T: borsh::BorshSerialize>(key: String, data: T) {
-    let state = borsh::BorshSerialize::try_to_vec(&data).expect("Expected to serialize");
-
-    let algorithm = &mut Sha256::default();
-    algorithm.update(&state);
-    let hash = algorithm.finalize_reset();
-
-    let request = SetStorageRequest {
-        key: key.clone(),
-        hash: hash.as_slice().try_into().unwrap(),
-        state: state.clone(),
-    };
-
-    let to_host = borsh::BorshSerialize::try_to_vec(&request).expect("Expected to serialize");
-
-    risc0_zkvm::guest::env::syscall(SET_STORAGE_CALL, &to_host, &mut []);
+pub fn set_storage<T: borsh::BorshSerialize>(key: String, data: T) {
+    ENV.lock().unwrap().as_mut().unwrap().set_storage(key, data)
 }
-
-// pub fn set_final_state<T: borsh::BorshSerialize>(state: T) {
-//     let mut final_state = FINAL_STATE.lock().unwrap();
-//     *final_state = Some(borsh::BorshSerialize::try_to_vec(&state).expect("Expected to serialize"));
-// }
 
 pub fn commit<T: borsh::BorshSerialize>(output: T) {
-    let output = borsh::BorshSerialize::try_to_vec(&output).expect("Expected to serialize");
-
-    // let final_state_hash = FINAL_STATE.lock().unwrap().clone().map(|state| {
-    //     let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
-    //     algorithm.update(state);
-    //     algorithm.finalize_reset().as_slice().try_into().unwrap()
-    // });
-
-    // let initial_state_hash = INITIAL_STATE_HASH.lock().unwrap().clone();
-
-    let cross_calls_hashes = CROSS_CALLS_HASHES.lock().unwrap().clone();
-
-    let committment = ExecutionCommittment {
-        output,
-        cross_calls_hashes,
-        initial_state_hash: None,
-        final_state_hash: None,
-    };
-
-    risc0_zkvm::guest::env::commit_slice(
-        &borsh::BorshSerialize::try_to_vec(&committment).expect("Expected to serialize"),
-    )
+    ENV.lock().unwrap().take().unwrap().commit(output)
 }
 
 /// Get EVM address by AccountId
 pub fn get_evm_address(account_id: AccountId) -> eth_primitive_types::H160 {
-    let mut response = [0u32; 20];
-
-    risc0_zkvm::guest::env::syscall(
-        GET_ACCOUNT_MAPPING,
-        account_id.to_string().as_bytes(),
-        &mut response,
-    );
-
-    let response: [u8; 20] =
-        risc0_zkvm::serde::from_slice(&response).expect("Expected to deserialize");
-
-    eth_primitive_types::H160::from_slice(&response)
+    ENV.lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .get_evm_address(account_id)
 }

@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 spin_sdk_macros = { path = "../macros" }
-borsh = "0.10.3"
+borsh = { git = "ssh://github.com/near/borsh-rs", branch = "master", features = ["derive"] }
 serde = { version = "1.0.171", features = ["derive"] }
 risc0-zkvm = { version = "0.16.1", default-features = false, features = ["std"] }
 spin_primitives = { path = "../../spin_core/primitives" }

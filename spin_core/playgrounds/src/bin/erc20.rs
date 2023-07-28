@@ -1,6 +1,6 @@
 use tracing::info;
 
-use spin_primitives::{AccountId, ExecutionCommittment};
+use spin_primitives::{AccountId, ExecutionOutcome};
 use spin_runtime::context::ExecutionContext;
 use spin_runtime::executor;
 
@@ -65,11 +65,14 @@ fn main() {
 #[allow(dead_code)]
 fn init_evm_accounts() {
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        AccountId::new(String::from("alice.spin")),
-        AccountId::new(String::from("alice.spin")),
-        AccountId::new("evm".to_string()),
-        100_000_000,
-        spin_primitives::FunctionCall::new("init".into(), ()),
+        spin_primitives::ContractCall::new(
+            AccountId::new("evm".to_string()),
+            "init".into(),
+            (),
+            100_000_000,
+            AccountId::new(String::from("alice.spin")),
+            AccountId::new(String::from("alice.spin")),
+        ),
     )));
 
     executor::execute(ctx.clone()).unwrap();
@@ -88,15 +91,18 @@ fn deploy_evm_contract(
     let constructor_input = constructor.encode_input(bytecode, &[]).unwrap();
 
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        owner_account_id.clone(),
-        owner_account_id.clone(),
-        AccountId::new("evm".to_string()),
-        100_000_000,
-        spin_primitives::FunctionCall::new("deploy_contract".into(), constructor_input),
+        spin_primitives::ContractCall::new(
+            AccountId::new("evm".to_string()),
+            "deploy_contract".into(),
+            constructor_input,
+            100_000_000,
+            owner_account_id.clone(),
+            owner_account_id.clone(),
+        ),
     )));
 
     let s = executor::execute(ctx.clone()).unwrap();
-    let committment: ExecutionCommittment =
+    let committment: ExecutionOutcome =
         borsh::BorshDeserialize::deserialize(&mut s.journal.as_slice()).unwrap();
 
     let result: ([u8; 20], Vec<u8>) = committment.try_deserialize_output().unwrap();
@@ -116,18 +122,18 @@ fn call_evm_contract(
     let input = function.encode_input(args).unwrap();
 
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        account_id.clone(),
-        account_id.clone(),
-        AccountId::new("evm".to_string()),
-        100_000_000,
-        spin_primitives::FunctionCall::new(
+        spin_primitives::ContractCall::new(
+            AccountId::new("evm".to_string()),
             "call_contract".into(),
             (contract_address.to_fixed_bytes(), input),
+            100_000_000,
+            account_id.clone(),
+            account_id.clone(),
         ),
     )));
 
     let s = executor::execute(ctx.clone()).unwrap();
-    let committment: ExecutionCommittment =
+    let committment: ExecutionOutcome =
         borsh::BorshDeserialize::deserialize(&mut s.journal.as_slice()).unwrap();
 
     let output: Vec<u8> = committment.try_deserialize_output().unwrap();

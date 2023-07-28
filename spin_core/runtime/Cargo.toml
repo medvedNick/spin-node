@@ -9,12 +9,13 @@ edition = "2021"
 spin_primitives = { path = "../primitives" }
 meta_contracts = { path = "../meta_contracts" }
 
-anyhow = "1.0.72"
+anyhow.workspace = true
+borsh.workspace = true
+
 risc0-zkvm = { version = "0.16.1", features = ["cuda"] }
 risc0-zkp = { version = "0.16.1"}
 risc0-zkvm-platform = { version = "0.16.1" }
 serde = { version = "1.0.171", features = ["derive"] }
-borsh = "0.10.3"
 tracing = "0.1.36"
 eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
 hex = "0.4.3"

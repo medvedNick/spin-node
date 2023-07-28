@@ -1,0 +1,8 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./spin_core/meta_contracts/evm/Cargo.toml",
+        "./spin_core/Cargo.toml",
+        "./spin_sdk/Cargo.toml",
+        "./example_contracts/Cargo.toml"
+    ]
+}

@@ -12,7 +12,7 @@ name = "example_token"
 [dependencies]
 spin_runtime = { path = "../runtime" }
 spin_primitives = { path = "../primitives" }
-borsh = "0.10.3"
+borsh.workspace = true
 tracing = "0.1.36"
 tracing-core = "0.1.29"
 tracing-log = "0.1.3"
