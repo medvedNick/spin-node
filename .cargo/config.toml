@@ -1,2 +1,2 @@
 [patch.crates-io]
-cc = { git = "ssh://git@github.com/rust-lang/cc-rs.git", rev = "e5bbdfa" }
+cc = { git = "https://github.com/rust-lang/cc-rs.git", rev = "e5bbdfa" }
