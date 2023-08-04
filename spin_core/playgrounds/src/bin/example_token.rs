@@ -1,3 +1,5 @@
+use risc0_recursion::{lift, join};
+use risc0_zkvm::prove::get_prover;
 use tracing::info;
 
 use spin_primitives::{AccountId, ExecutionCommittment};
@@ -11,25 +13,42 @@ use std::sync::{Arc, RwLock};
 fn main() {
     install_tracing();
 
-    let token = AccountId::new("token.spin".to_string());
+    let fib = AccountId::new("fibonacci.spin".to_string());
     let alice = AccountId::new("alice.spin".to_string());
-    let bob = AccountId::new("bob.spin".to_string());
 
-    token_init(&token, &alice, String::from("SPIN"), 100);
+    let ctx = Arc::new(RwLock::new(ExecutionContext::new(
+        AccountId::new(alice.to_string()),
+        AccountId::new(alice.to_string()),
+        AccountId::new(fib.to_string()),
+        100_000_000,
+        spin_primitives::FunctionCall::new("fibonacci".into(), 500_000u32),
+    )));
+    
+    info!("executing...");    
+    let session = executor::execute(ctx).unwrap();
 
-    let alice_balance = token_balance_of(&token, &alice);
-    info!(address = ?alice, balance = alice_balance);
+    info!("got {} segments...", session.segments.len());
+    let verifier_ctx = risc0_zkvm::VerifierContext::default();
+    let segments = session.resolve().unwrap();
+    let prover = get_prover("$poseidon");
 
-    let bob_balance = token_balance_of(&token, &bob);
-    info!(address = ?bob, balance = bob_balance);
+    info!("proving first segment...");
+    let first_receipt = prover.prove_segment(&verifier_ctx, &segments[0]).unwrap();
+    info!("lifting first segment...");
+    let mut rollup = lift(&first_receipt).unwrap();
 
-    transfer(&token, &alice, &bob, 10);
-
-    let alice_balance = token_balance_of(&token, &alice);
-    info!(address = ?alice, balance = alice_balance);
-
-    let bob_balance = token_balance_of(&token, &bob);
-    info!(address = ?bob, balance = bob_balance);
+    for receipt in &segments[1..] {
+        info!("proving next segment...");
+        let segment_receipt = prover.prove_segment(&verifier_ctx, &receipt).unwrap();
+        info!("lifting next segment...");
+        let rec_receipt = lift(&segment_receipt).unwrap();
+        info!("joining next segment...");
+        rollup = join(&rollup, &rec_receipt).unwrap();
+    }
+    info!("verifying...");
+    let result = rollup.verify_with_context(&verifier_ctx);
+    info!("verified: {:#?}", result);
+    info!("finished!");
 }
 
 fn token_init(token: &AccountId, signer: &AccountId, ticker: String, initial_supply: u128) {

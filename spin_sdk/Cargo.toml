@@ -3,3 +3,39 @@ members = [
     "sdk",
     "macros",
 ]
+
+[workspace.dependencies.risc0-build]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+
+[workspace.dependencies.risc0-build-kernel]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+
+[workspace.dependencies.risc0-circuit-rv32im]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+default-features = false
+
+[workspace.dependencies.risc0-core]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+default-features = false
+
+[workspace.dependencies.risc0-zkp]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+default-features = false
+
+[workspace.dependencies.risc0-zkvm]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+default-features = false
+
+[workspace.dependencies.risc0-zkvm-methods]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"
+
+[workspace.dependencies.risc0-zkvm-platform]
+git = "ssh://git@github.com/risc0/risc0.git"
+rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628"

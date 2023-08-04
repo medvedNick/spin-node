@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [build-dependencies]
-risc0-build = { version = "0.16.1" }
+risc0-build = { git = "ssh://git@github.com/risc0/risc0.git", rev = "0658eaa6aa9d60e8ac637fa4e15f22eabeb97628" }
 
 [package.metadata.risc0]
 methods = ["evm"]
