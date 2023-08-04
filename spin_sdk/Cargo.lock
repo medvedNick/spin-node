@@ -701,6 +701,7 @@ dependencies = [
  "risc0-zkvm",
  "risc0-zkvm-platform",
  "serde",
+ "sha2",
  "tracing",
  "tracing-core",
  "tracing-log",

@@ -6,10 +6,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use spin_primitives::{AccountId, ContractCall};
+use spin_primitives::{syscalls::CrossContractCallRequest, AccountId, ContractEntrypointContext};
 
 pub struct ExecutionContext {
-    call: ContractCall,
+    call: ContractEntrypointContext,
     used_gas: u64,
 
     cross_contract_calls: Vec<Arc<RwLock<ExecutionContext>>>,
@@ -17,7 +17,7 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn new(call: ContractCall) -> Self {
+    pub fn new(call: ContractEntrypointContext) -> Self {
         Self {
             call,
             used_gas: 0,
@@ -28,11 +28,28 @@ impl ExecutionContext {
 
     pub fn cross_contract_call(
         &mut self,
-        call: ContractCall,
+        req: CrossContractCallRequest,
     ) -> Result<Arc<RwLock<ExecutionContext>>> {
-        if self.available_gas() < call.attached_gas {
+        let CrossContractCallRequest {
+            contract: account,
+            method,
+            args,
+            attached_gas,
+        } = req;
+
+        if self.available_gas() < req.attached_gas {
             return Err(anyhow::anyhow!("Not enough gas"));
         }
+
+        let call = ContractEntrypointContext {
+            account,
+            method,
+            args,
+            attached_gas,
+            sender: self.call.account.clone(),
+            signer: self.call.signer.clone(),
+        };
+
         let context = Arc::new(RwLock::new(ExecutionContext {
             call,
             used_gas: 0,
@@ -45,7 +62,7 @@ impl ExecutionContext {
         Ok(context)
     }
 
-    pub fn call(&self) -> &ContractCall {
+    pub fn call(&self) -> &ContractEntrypointContext {
         &self.call
     }
 

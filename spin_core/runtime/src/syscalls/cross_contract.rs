@@ -1,10 +1,11 @@
 use anyhow::Result;
+use borsh::BorshDeserialize;
 use risc0_zkvm::{serde::to_vec, Syscall};
 use tracing::debug;
 
 use std::sync::{Arc, RwLock};
 
-use spin_primitives::ContractCall;
+use spin_primitives::syscalls::CrossContractCallRequest;
 
 use crate::{context::ExecutionContext, executor};
 
@@ -31,11 +32,12 @@ impl Syscall for CrossContractCallHandler {
 
         let buf_ptr = syscall_ctx.load_register(risc0_zkvm_platform::syscall::reg_abi::REG_A3);
         let buf_len = syscall_ctx.load_register(risc0_zkvm_platform::syscall::reg_abi::REG_A4);
-        let from_guest = syscall_ctx.load_region(buf_ptr, buf_len);
+        let mut from_guest = syscall_ctx.load_region(buf_ptr, buf_len);
 
-        let call = ContractCall::try_from_bytes(from_guest).expect("Invalid contract call");
+        let req: CrossContractCallRequest = BorshDeserialize::try_from_slice(&mut from_guest)
+            .expect("Invalid contract call request");
 
-        let ccc_ctx = origin_ctx.cross_contract_call(call).unwrap();
+        let ccc_ctx = origin_ctx.cross_contract_call(req).unwrap();
 
         let ccc_session = executor::execute(ccc_ctx.clone()).unwrap(); // TODO: handle error
         let ccc_journal = ccc_session.journal.clone();

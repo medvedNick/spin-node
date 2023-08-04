@@ -5,13 +5,13 @@ use std::{collections::HashMap, sync::Mutex};
 
 use spin_primitives::{
     syscalls::{
-        GetStorageResponse, SetStorageRequest, CROSS_CONTRACT_CALL, GET_ACCOUNT_MAPPING,
-        GET_STORAGE_CALL, SET_STORAGE_CALL,
+        CrossContractCallRequest, GetStorageResponse, SetStorageRequest, CROSS_CONTRACT_CALL,
+        GET_ACCOUNT_MAPPING, GET_STORAGE_CALL, SET_STORAGE_CALL,
     },
-    AccountId, ContractCall, Digest as HashDigest, ExecutionOutcome, StorageKey,
+    AccountId, ContractEntrypointContext, Digest as HashDigest, ExecutionOutcome, StorageKey,
 };
 
-pub fn setup_env(call: &ContractCall) {
+pub fn setup_env(call: &ContractEntrypointContext) {
     let mut env = ENV.lock().unwrap();
     *env = Some(Env::new_from_call(call));
 }
@@ -30,7 +30,7 @@ struct Env {
 }
 
 impl Env {
-    fn new_from_call(call: &ContractCall) -> Self {
+    fn new_from_call(call: &ContractEntrypointContext) -> Self {
         let call_hash = {
             let call_bytes = BorshSerialize::try_to_vec(&call).expect("Expected to serialize");
             let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
@@ -77,16 +77,9 @@ impl Env {
         attached_gas: u64,
         args: T,
     ) -> ExecutionOutcome {
-        let call = ContractCall::new(
-            account,
-            method,
-            args,
-            attached_gas,
-            self.contract(),
-            self.signer(),
-        );
-        let call_hash = {
-            let call_bytes = BorshSerialize::try_to_vec(&call).expect("Expected to serialize");
+        let req = CrossContractCallRequest::new(account, method, args, attached_gas);
+        let req_hash = {
+            let call_bytes = BorshSerialize::try_to_vec(&req).expect("Expected to serialize");
             let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
             algorithm.update(&call_bytes);
             algorithm.finalize_reset().as_slice().try_into().unwrap()
@@ -96,7 +89,7 @@ impl Env {
 
         risc0_zkvm::guest::env::syscall(
             CROSS_CONTRACT_CALL,
-            call.into_bytes().as_slice(),
+            req.try_to_vec().unwrap().as_slice(),
             &mut response,
         );
 
@@ -106,7 +99,7 @@ impl Env {
         let outcome =
             ExecutionOutcome::try_from_bytes(response).expect("ExecutionOutcome is corrupted");
 
-        assert_eq!(call_hash, outcome.call_hash);
+        assert_eq!(req_hash, outcome.call_hash);
 
         let output_hash = {
             let algorithm = &mut risc0_zkvm::sha::rust_crypto::Sha256::default();
@@ -114,7 +107,7 @@ impl Env {
             algorithm.finalize_reset().as_slice().try_into().unwrap()
         };
 
-        self.cross_calls_hashes.push((call_hash, output_hash));
+        self.cross_calls_hashes.push((req_hash, output_hash));
 
         outcome
     }

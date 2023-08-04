@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub mod syscalls;
 
 #[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
-pub struct ContractCall {
+pub struct ContractEntrypointContext {
     pub account: AccountId,
     pub method: String,
     pub args: Vec<u8>,
@@ -15,7 +15,7 @@ pub struct ContractCall {
     pub signer: AccountId,
 }
 
-impl ContractCall {
+impl ContractEntrypointContext {
     pub fn new<T: BorshSerialize>(
         account: AccountId,
         method: String,
@@ -125,4 +125,122 @@ impl ExecutionOutcome {
     pub fn try_deserialize_output<T: BorshDeserialize>(&self) -> std::io::Result<T> {
         borsh::BorshDeserialize::deserialize(&mut self.output.as_slice())
     }
+}
+
+const SYSTEM_META_CONTRACT_ACCOUNT_ID: &str = "spin";
+
+#[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
+pub struct Transaction {
+    pub hash: Digest,
+    pub body: TransactionBody,
+}
+
+impl Transaction {
+    pub fn new(body: TransactionBody) -> Self {
+        Self {
+            hash: body.hash(),
+            body,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
+pub struct TransactionBody {
+    pub contract: AccountId,
+    pub method: String,
+    pub args: Vec<u8>,
+    pub attached_gas: u64,
+    pub signer: AccountId,
+    pub origin_block_height: u64,
+    pub origin_block_hash: Digest,
+    pub deadline: u64,
+    pub nonce: u64,
+}
+
+impl TransactionBody {
+    pub fn hash(&self) -> Digest {
+        use sha2::{Digest as _, Sha256};
+        let hash = Sha256::digest(self.try_to_vec().unwrap());
+        hash.try_into().unwrap()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
+pub struct TransactionBuilder {
+    pub contract: AccountId,
+    pub method: String,
+    pub args: Vec<u8>,
+    pub attached_gas: u64,
+    pub signer: AccountId,
+    pub origin_block_height: u64,
+    pub origin_block_hash: Digest,
+    pub deadline: Option<u64>,
+    pub nonce: u64,
+}
+
+impl TransactionBuilder {
+    pub fn new(
+        contract: AccountId,
+        method: String,
+        args: Vec<u8>,
+        attached_gas: u64,
+        signer: AccountId,
+        origin_block: &Block,
+    ) -> Self {
+        Self {
+            contract,
+            method,
+            args,
+            attached_gas,
+            signer,
+            origin_block_height: origin_block.height,
+            origin_block_hash: origin_block.hash.clone(),
+            deadline: None,
+            nonce: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64,
+        }
+    }
+
+    pub fn set_nonce(mut self, nonce: u64) -> Self {
+        self.nonce = nonce;
+        self
+    }
+
+    pub fn set_deadline(mut self, deadline: u64) -> Self {
+        self.deadline = Some(deadline);
+        self
+    }
+
+    pub fn build(self) -> Transaction {
+        let body = TransactionBody {
+            contract: self.contract.clone(),
+            method: self.method.clone(),
+            args: self.args.clone(),
+            attached_gas: self.attached_gas,
+            signer: self.signer.clone(),
+            origin_block_height: self.origin_block_height,
+            origin_block_hash: self.origin_block_hash.clone(),
+            deadline: self.deadline.unwrap_or(10), // TODO default deadline
+            nonce: self.nonce,
+        };
+
+        Transaction::new(body)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
+pub struct SignedTransaction {
+    pub tx: Transaction,
+    pub signature: Vec<u8>, // TODO
+}
+
+#[derive(Serialize, Deserialize, Debug, BorshSerialize, BorshDeserialize)]
+pub struct Block {
+    pub height: u64,
+    pub hash: Digest,
+    pub parent_hash: Digest,
+    pub timestamp: u64,
+    pub txs: Vec<Transaction>,
 }

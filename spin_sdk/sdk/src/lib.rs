@@ -13,10 +13,11 @@ macro_rules! entrypoint {
         mod zkvm_generated_main {
             #[no_mangle]
             fn main() {
-                let contract_call = spin_sdk::spin_primitives::ContractCall::try_from_bytes(
-                    risc0_zkvm::guest::env::read(),
-                )
-                .expect("Corrupted ContractCall");
+                let contract_call =
+                    spin_sdk::spin_primitives::ContractEntrypointContext::try_from_bytes(
+                        risc0_zkvm::guest::env::read(),
+                    )
+                    .expect("Corrupted ContractEntrypointContext");
                 spin_sdk::env::setup_env(&contract_call);
                 super::ZKVM_ENTRY(contract_call.function_call())
             }

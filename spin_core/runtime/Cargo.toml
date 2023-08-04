@@ -15,10 +15,14 @@ borsh.workspace = true
 risc0-zkvm = { version = "0.16.1", features = ["cuda"] }
 risc0-zkp = { version = "0.16.1"}
 risc0-zkvm-platform = { version = "0.16.1" }
+tokio = { version = "1", features = ["full"] }
+sqlx = { version = "0.7", features = [ "runtime-tokio", "sqlite" ] }
+
 serde = { version = "1.0.171", features = ["derive"] }
 tracing = "0.1.36"
 eth-primitive-types = { package = "primitive-types", version = "0.12.1" }
 hex = "0.4.3"
+sled = "0.34.7"
 
 # Always optimize; building and running the guest takes much longer without optimization.
 [profile.dev]
