@@ -43,14 +43,15 @@ fn main() {
     while proves.len() != 1 {
         let (even, odd): (Vec<_>, Vec<_>) = proves.iter().enumerate().partition(|(i, _)| i % 2 == 0);
         let mut new_proves = vec![];
+        let is_different_len = even.len() > odd.len();
 
         for ((index1, first), (index2, second)) in even.iter().zip(odd) {
             info!("joining {} and {} of iter {}...", index1, index2, iteration);
             let joined = join(&first, &second).unwrap();
             new_proves.push(joined);
         }
-        if even.len() > odd.len() {
-            new_proves.push(even.last().unwrap());
+        if is_different_len {
+            new_proves.push(even.last().unwrap().1.clone());
         }
 
         proves = new_proves;
