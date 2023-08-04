@@ -32,21 +32,33 @@ fn main() {
     let segments = session.resolve().unwrap();
     let prover = get_prover("$poseidon");
 
-    info!("proving first segment...");
-    let first_receipt = prover.prove_segment(&verifier_ctx, &segments[0]).unwrap();
-    info!("lifting first segment...");
-    let mut rollup = lift(&first_receipt).unwrap();
-
-    for receipt in &segments[1..] {
+    let mut proves = segments.iter().map(|receipt| {
         info!("proving next segment...");
-        let segment_receipt = prover.prove_segment(&verifier_ctx, &receipt).unwrap();
+        let prove = prover.prove_segment(&verifier_ctx, &receipt).unwrap();
         info!("lifting next segment...");
-        let rec_receipt = lift(&segment_receipt).unwrap();
-        info!("joining next segment...");
-        rollup = join(&rollup, &rec_receipt).unwrap();
+        lift(&prove).unwrap()
+    }).collect::<Vec<_>>();
+
+    let mut iteration = 0;
+    while proves.len() != 1 {
+        let (even, odd): (Vec<_>, Vec<_>) = proves.iter().enumerate().partition(|(i, _)| i % 2 == 0);
+        let mut new_proves = vec![];
+
+        for ((index1, first), (index2, second)) in even.iter().zip(odd) {
+            info!("joining {} and {} of iter {}...", index1, index2, iteration);
+            let joined = join(&first, &second).unwrap();
+            new_proves.push(joined);
+        }
+        if even.len() > odd.len() {
+            new_proves.push(even.last().unwrap());
+        }
+
+        proves = new_proves;
+        iteration += 1;
     }
+
     info!("verifying...");
-    let result = rollup.verify_with_context(&verifier_ctx);
+    let result = proves[0].verify_with_context(&verifier_ctx);
     info!("verified: {:#?}", result);
     info!("finished!");
 }
