@@ -1,5 +1,5 @@
-use risc0_recursion::{lift, join};
-use risc0_zkvm::{prove::get_prover, sha::Digest};
+// use risc0_recursion::{lift, join};
+use risc0_zkvm::{prove::get_prover, sha::Digest, default_prover};
 use tracing::info;
 
 use spin_primitives::{AccountId, ExecutionCommittment};
@@ -16,8 +16,8 @@ fn main() {
     let fib = AccountId::new("fibonacci.spin".to_string());
     let alice = AccountId::new("alice.spin".to_string());
 
-    // let input = 1u32;
-    let input = 100_000u32;
+    let input = 1u32;
+    // let input = 100_000u32;
     let ctx = Arc::new(RwLock::new(ExecutionContext::new(
         AccountId::new(alice.to_string()),
         AccountId::new(alice.to_string()),
@@ -32,48 +32,62 @@ fn main() {
     info!("got {} segments...", session.segments.len());
     let verifier_ctx = risc0_zkvm::VerifierContext::default();
 
-    let segments = session.resolve().unwrap();
-    let prover = get_prover("$poseidon");
-    let mut rollup_wrapped = None;
+    // no recursion
+    let prover = default_prover();
+    let receipt = session.prove().unwrap();
+    let segment_receipts = receipt.inner.flat();
+    let segment_receipt = segment_receipts[0].clone();
+    let seal = seal_to_str(&segment_receipt.seal);
+    let image_id = digest_to_str(&session.resolve().unwrap()[0].pre_image.compute_id());
+    let post_state_digest = digest_to_str(&session.resolve().unwrap()[0].post_image_id);
+    let journal_hash = journal_to_str(&receipt.journal);
 
-    for receipt in segments {
-        info!("proving next segment...");
-        let segment_receipt = prover.prove_segment(&verifier_ctx, &receipt).unwrap();
-        info!("lifting next segment...");
-        let rec_receipt = lift(&segment_receipt).unwrap();
-        info!("joining next segment...");
-        rollup_wrapped = if rollup_wrapped == None {
-            Some(rec_receipt)
-        } else {
-            Some(join(&rollup_wrapped.unwrap(), &rec_receipt).unwrap())
-        };
-    }
-    let rollup = rollup_wrapped.unwrap();
+    // recursion
+    // let segments = session.resolve().unwrap();
+    // let prover = get_prover("$poseidon");
+    // let mut rollup_wrapped = None;
+    // for receipt in segments {
+    //     info!("proving next segment...");
+    //     let segment_receipt = prover.prove_segment(&verifier_ctx, &receipt).unwrap();
+    //     info!("lifting next segment...");
+    //     let rec_receipt = lift(&segment_receipt).unwrap();
+    //     info!("joining next segment...");
+    //     rollup_wrapped = if rollup_wrapped == None {
+    //         Some(rec_receipt)
+    //     } else {
+    //         Some(join(&rollup_wrapped.unwrap(), &rec_receipt).unwrap())
+    //     };
+    // }
+    // let rollup = rollup_wrapped.unwrap();
 
     // info!("verifying...");
     // let result = rollup.verify_with_context(&verifier_ctx);
     // info!("verified: {:#?}", result);
 
-    let seal = seal_to_str(&rollup.seal);
-    let image_id = digest_to_str(&rollup.meta.pre.merkle_root);
-    let post_state_digest = digest_to_str(&rollup.meta.post.merkle_root);
-    let journal_hash = digest_to_str(&rollup.meta.output);
+    // let seal = seal_to_str(&rollup.seal);
+    // let image_id = digest_to_str(&rollup.meta.pre.merkle_root);
+    // let post_state_digest = digest_to_str(&rollup.meta.post.merkle_root);
+    // let journal_hash = digest_to_str(&rollup.meta.output);
 
-    let path = "/Users/nikita/Develop/spin-node-evikser".to_string();
+    let path = "/Users/nikita/Develop/spin-node-evikser/simple_contract_state".to_string();
     fs::write(format!("{}/seal.txt", path), &seal).unwrap();
     fs::write(format!("{}/imageId.txt", path), &image_id).unwrap();
     fs::write(format!("{}/postStateDigest.txt", path), &post_state_digest).unwrap();
     fs::write(format!("{}/journalHash.txt", path), &journal_hash).unwrap();
-    info!("seal size: {} kb", rollup.seal.len() / 1024);
-    info!("imageId/pre: {:x?}", rollup.meta.pre.merkle_root);
-    info!("postStateDigest/post: {:x?}", rollup.meta.post.merkle_root);
-    info!("journalHash/output: {:x?}", rollup.meta.output);
+    // info!("seal size: {} kb", rollup.seal.len() / 1024);
+    // info!("imageId/pre: {:x?}", rollup.meta.pre.merkle_root);
+    // info!("postStateDigest/post: {:x?}", rollup.meta.post.merkle_root);
+    // info!("journalHash/output: {:x?}", rollup.meta.output);
 
     info!("finished!");
 }
 
 fn seal_to_str(seal: &Vec<u32>) -> String {
     format!("0x{:08x?}", seal).replace(", ", "").replace("[", "").replace("]", "").to_string()
+}
+
+fn journal_to_str(journal: &Vec<u8>) -> String {
+    format!("0x{:02x?}", journal).replace(", ", "").replace("[", "").replace("]", "").to_string()
 }
 
 fn digest_to_str(digest: &Digest) -> String {
