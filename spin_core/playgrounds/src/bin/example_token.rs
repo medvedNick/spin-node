@@ -1,6 +1,8 @@
 // use risc0_recursion::{lift, join};
-use risc0_zkvm::{prove::get_prover, sha::Digest, default_prover};
+use risc0_zkvm::{prove::get_prover, sha::Digest, default_prover, ExecutorEnv};
 use tracing::info;
+use anyhow::Context;
+use risc0_zkvm::serde::to_vec;
 
 use spin_primitives::{AccountId, ExecutionCommittment};
 use spin_runtime::context::ExecutionContext;
@@ -10,37 +12,61 @@ use playgrounds::install_tracing;
 
 use std::{sync::{Arc, RwLock}, fs};
 
+const MAX_MEMORY: u32 = 0x10000000;
+const PAGE_SIZE: u32 = 0x400;
+
+
 fn main() {
     install_tracing();
 
-    let fib = AccountId::new("fibonacci.spin".to_string());
-    let alice = AccountId::new("alice.spin".to_string());
+    info!("starting!");
 
-    let input = 1u32;
-    // let input = 100_000u32;
-    let ctx = Arc::new(RwLock::new(ExecutionContext::new(
-        AccountId::new(alice.to_string()),
-        AccountId::new(alice.to_string()),
-        AccountId::new(fib.to_string()),
-        100_000_000,
-        spin_primitives::FunctionCall::new("fibonacci".into(), input),
-    )));
+    let input = ethabi::Token::Uint(100.into());
+
+    let env = ExecutorEnv::builder()
+        .add_input(&ethabi::encode(&[input]))
+        .build().unwrap();
+
+    let elf_bytes = load_contract("../fibonacci.elf");
+    let program = risc0_zkvm::Program::load_elf(&elf_bytes, MAX_MEMORY).unwrap();
+
+    let image = risc0_zkvm::MemoryImage::new(&program, PAGE_SIZE).unwrap();
+    let mut exec = risc0_zkvm::Executor::new(env, image);
+
+    info!("running...");
+
+    let session = exec.run().expect("run failed");
+
+    // let fib = AccountId::new("fibonacci.spin".to_string());
+    // let alice = AccountId::new("alice.spin".to_string());
+
+    // let input = 1u32;
+    // // let input = 100_000u32;
+    // let ctx = Arc::new(RwLock::new(ExecutionContext::new(
+    //     AccountId::new(alice.to_string()),
+    //     AccountId::new(alice.to_string()),
+    //     AccountId::new(fib.to_string()),
+    //     100_000_000,
+    //     spin_primitives::FunctionCall::new("fibonacci".into(), input),
+    // )));
     
-    info!("executing...");    
-    let session = executor::execute(ctx).unwrap();
+    // info!("executing...");    
+    // let session = executor::execute(ctx).unwrap();
 
-    info!("got {} segments...", session.segments.len());
-    let verifier_ctx = risc0_zkvm::VerifierContext::default();
-
+    // info!("got {} segments...", session.segments.len());
+    // let verifier_ctx = risc0_zkvm::VerifierContext::default();
+    
     // no recursion
     let prover = default_prover();
     let receipt = session.prove().unwrap();
     let segment_receipts = receipt.inner.flat();
     let segment_receipt = segment_receipts[0].clone();
     let seal = seal_to_str(&segment_receipt.seal);
-    let image_id = digest_to_str(&session.resolve().unwrap()[0].pre_image.compute_id());
-    let post_state_digest = digest_to_str(&session.resolve().unwrap()[0].post_image_id);
+    let image_id = format!("0x{}", &session.resolve().unwrap()[0].pre_image.compute_id());
+    let post_state_digest = format!("0x{}", &session.resolve().unwrap()[0].post_image_id);
     let journal_hash = journal_to_str(&receipt.journal);
+
+    info!("{:?}", segment_receipt.seal.iter().take(50).collect::<Vec<_>>());
 
     // recursion
     // let segments = session.resolve().unwrap();
@@ -74,6 +100,7 @@ fn main() {
     fs::write(format!("{}/imageId.txt", path), &image_id).unwrap();
     fs::write(format!("{}/postStateDigest.txt", path), &post_state_digest).unwrap();
     fs::write(format!("{}/journalHash.txt", path), &journal_hash).unwrap();
+
     // info!("seal size: {} kb", rollup.seal.len() / 1024);
     // info!("imageId/pre: {:x?}", rollup.meta.pre.merkle_root);
     // info!("postStateDigest/post: {:x?}", rollup.meta.post.merkle_root);
@@ -92,6 +119,10 @@ fn journal_to_str(journal: &Vec<u8>) -> String {
 
 fn digest_to_str(digest: &Digest) -> String {
     format!("0x{:?}", digest).replace("Digest(", "").replace(")", "").to_string()
+}
+
+fn load_contract(name: &str) -> Vec<u8> {
+    std::fs::read(name.clone()).with_context(|| format!("Can't read contract {}", name)).unwrap()
 }
 
 fn token_init(token: &AccountId, signer: &AccountId, ticker: String, initial_supply: u128) {
